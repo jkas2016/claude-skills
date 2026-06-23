@@ -1,0 +1,8 @@
+{
+  "name": "deep-code-review",
+  "version": "0.1.0",
+  "description": "Whole-repo deep code audit using language rule sets ported from OpenCodeReview (Apache-2.0). Host-session, read-only.",
+  "author": { "name": "jkas2016" },
+  "license": "Apache-2.0",
+  "keywords": ["code-review", "audit", "skill"]
+}

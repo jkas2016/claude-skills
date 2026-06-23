@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "name": "claude-skills",
+  "owner": { "name": "jkas2016" },
+  "plugins": [
+    { "name": "deep-code-review", "source": "./plugins/deep-code-review" },
+    { "name": "llm-wiki-memory",  "source": "./plugins/llm-wiki-memory" }
+  ]
+}
