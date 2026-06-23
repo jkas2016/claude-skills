@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "description": "Routes auto-memory save/recall to an Obsidian vault at $LLM_WIKI_PATH so every machine shares notes.",
   "author": { "name": "jkas2016" },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["memory", "obsidian", "skill"]
 }

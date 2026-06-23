@@ -21,8 +21,7 @@ A [Claude Code plugin marketplace](https://code.claude.com/docs/en/plugin-market
 
 ## Licensing
 
-- Repository license: **Apache-2.0** (see `LICENSE`). `deep-code-review` bundles assets ported from OpenCodeReview (Apache-2.0); see its `references/NOTICE`.
-- `llm-wiki-memory` is **MIT** (declared in its `plugin.json`).
+- Repository license: **Apache-2.0** (see `LICENSE`) — covers both plugins. `deep-code-review` bundles assets ported from OpenCodeReview (Apache-2.0); see its `references/NOTICE`.
 
 ## Secrets policy
 
