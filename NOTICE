@@ -1,0 +1,10 @@
+claude-skills
+Copyright 2026 jkas2016
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software developed as part of OpenCodeReview
+(https://github.com/alibaba/open-code-review), Copyright (c) Alibaba Group,
+licensed under the Apache License, Version 2.0. See
+plugins/deep-code-review/skills/deep-code-review/references/NOTICE for the
+detailed list of ported and adapted files.
