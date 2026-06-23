@@ -1,0 +1,19 @@
+# Private design doc — contains email/proper-nouns, NEVER commit
+MARKETPLACE_DESIGN.md
+# Implementation plan — references personal absolute paths, NEVER commit
+docs/superpowers/
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+# OS
+.DS_Store
+# secrets / local config — 절대 추적 금지
+.env
+*.env
+**/config.json
+*.pem
+*.key
+id_rsa*
+# SDD / work scratch
+.superpowers/
