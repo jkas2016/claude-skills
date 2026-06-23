@@ -1,0 +1,13 @@
+This skill incorporates material from OpenCodeReview (open-code-review),
+Copyright (c) Alibaba Group, licensed under the Apache License, Version 2.0.
+Source: https://github.com/alibaba/open-code-review
+
+Ported verbatim:
+  references/rule_docs/*.md                  (from internal/config/rules/rule_docs/)
+  references/system_rules.json               (from internal/config/rules/)
+  references/supported_file_types.json       (from internal/config/allowlist/)
+  references/default_exclude_patterns.json   (from internal/config/allowlist/)
+Adapted in spirit:
+  references/reviewer-prompt.md, references/review-filter-prompt.md
+
+Apache-2.0 license text: http://www.apache.org/licenses/LICENSE-2.0
