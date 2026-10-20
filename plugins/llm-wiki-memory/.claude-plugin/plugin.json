@@ -1,7 +1,7 @@
 {
   "name": "llm-wiki-memory",
-  "version": "0.1.0",
-  "description": "Routes auto-memory save/recall to an Obsidian vault at $LLM_WIKI_PATH so every machine shares notes.",
+  "version": "0.3.0",
+  "description": "Shared Obsidian memory with bounded recall/context, canonical updates, consolidation/pruning, and a rebuilt memory index.",
   "author": { "name": "jkas2016" },
   "license": "Apache-2.0",
   "keywords": ["memory", "obsidian", "skill"]

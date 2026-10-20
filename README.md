@@ -17,7 +17,11 @@ A [Claude Code plugin marketplace](https://code.claude.com/docs/en/plugin-market
 | Plugin | What it does | Runtime | Setup required |
 |---|---|---|---|
 | `deep-code-review` | Whole-repo deep code audit using language rule sets ported from OpenCodeReview (Apache-2.0). Host-session, read-only — no API key. | `python3` (stdlib), `git` | None. Run `/deep-code-review` from a git repo root (no argument → current directory). |
-| `llm-wiki-memory` | Routes auto-memory save/recall to your own Obsidian vault so every machine shares notes. | `python3` (stdlib) | `export LLM_WIKI_PATH=<your-vault-path>` before use. If unset, the skill stops and tells you. |
+| `llm-wiki-memory` | Shared Obsidian memory with bounded search/context, canonical updates, consolidation/pruning, and a rebuilt index. | Python 3.10+ (stdlib) | Set `LLM_WIKI_PATH`; optionally configure the bounded SessionStart hook using the [maintenance guide](plugins/llm-wiki-memory/skills/llm-wiki-memory/references/maintenance.md). |
+
+Memory 0.3 searches summaries by default (8 results / 8192 UTF-8 bytes). Read full notes explicitly with `recall.py --read PATH`; the same byte budget applies. SessionStart context is capped at 4096 bytes. Existing seven-field notes remain compatible; lifecycle state is optional. Repeated concept keys update existing notes. Save counters/size thresholds require host-agent consolidation before further growth. Merge/drop physically remove old notes and regenerate MEMORY.md; the newest 20 committed backups remain recoverable. Hooks signal maintenance but do not perform deletion. See the [consolidation workflow](plugins/llm-wiki-memory/skills/llm-wiki-memory/references/consolidation.md).
+
+Run memory integration tests with `python3 -m unittest discover -s plugins/llm-wiki-memory/tests -v`.
 
 ## Licensing
 

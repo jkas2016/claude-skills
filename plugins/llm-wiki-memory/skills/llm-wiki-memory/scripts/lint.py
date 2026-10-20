@@ -1,66 +1,52 @@
 #!/usr/bin/env python3
-"""Lint the vault like a formatter: every note carries the 7 frontmatter fields, and
-MEMORY.md pointers and note files stay in sync. Run after any edit/delete.
-Exits non-zero when there are problems so it can gate a commit.
-"""
-import os
-import pathlib
+"""Validate required fields, index links, dates and lifecycle targets without changing files."""
+import datetime as dt
 import re
-import sys
-
-sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔(cp949)에서도 한글·em-dash 출력
-sys.stderr.reconfigure(encoding="utf-8")
-
-FIELDS = ("name", "description", "type", "tags", "aliases", "created", "updated")
-ROOTS = ("user", "feedback", "project", "reference", "projects")
-SKIP = {"README.md", "MEMORY.md"}  # 노트가 아닌 문서는 검사 대상에서 제외
+from urllib.parse import unquote
+from memory import FIELDS, cli, inside, load_notes, vault
+from maintain import validate_lifecycle
+from registry import MARKER, render_index
 
 
-def vault() -> pathlib.Path:
-    v = os.environ.get("LLM_WIKI_PATH")
-    if not v or not os.path.isdir(v):
-        sys.exit(f"LLM_WIKI_PATH 미설정/없음: {v!r}")
-    return pathlib.Path(v)
-
-
-def main() -> None:
-    vp = vault()
-    problems: list[str] = []
-    notes: list[pathlib.Path] = []
-
-    for r in ROOTS:
-        for p in (vp / r).rglob("*.md"):
-            if p.name in SKIP:
-                continue
-            notes.append(p)
-            rel = p.relative_to(vp).as_posix()
-            text = p.read_text(encoding="utf-8", errors="ignore")
-            fm = re.match(r"^---\n(.*?)\n---", text, re.S)
-            if not fm:
-                problems.append(f"{rel}: frontmatter(--- 블록) 없음")
-                continue
-            for f in FIELDS:
-                if not re.search(rf"^{f}:", fm.group(1), re.M):
-                    problems.append(f"{rel}: frontmatter 필드 누락 '{f}'")
-
-    idx = vp / "MEMORY.md"
-    idx_text = idx.read_text(encoding="utf-8") if idx.exists() else ""
-    linked = set(re.findall(r"\]\(([^)]+\.md)\)", idx_text))
-    for rel in sorted(linked):
-        if not (vp / rel).exists():
-            problems.append(f"MEMORY.md: dead link -> {rel}")
-
-    note_rels = {p.relative_to(vp).as_posix() for p in notes}
-    for rel in sorted(note_rels - linked):
-        problems.append(f"{rel}: MEMORY.md 인덱스에 포인터 없음")
-
+def main():
+    root = vault()
+    notes = load_notes(root)
+    problems = []
+    for n in notes:
+        for field in FIELDS:
+            if field not in n.meta:
+                problems.append(f'{n.rel}: missing {field}')
+        for field in ('created', 'updated'):
+            try:
+                dt.date.fromisoformat(str(n.meta.get(field, '')))
+            except ValueError:
+                problems.append(f'{n.rel}: invalid {field}')
+        if n.meta.get('type') not in ('user', 'feedback', 'project', 'reference'):
+            problems.append(f'{n.rel}: invalid type')
+        if 'pinned' in n.meta and n.meta['pinned'] not in ('true', 'false'):
+            problems.append(f'{n.rel}: invalid pinned')
+    try:
+        validate_lifecycle(notes)
+    except ValueError as exc:
+        problems.append(str(exc))
+    idx = inside(root, 'MEMORY.md')
+    text = idx.read_text(encoding='utf-8') if idx.exists() else ''
+    linked = [unquote(link) for link in re.findall(r'\]\(([^)]+\.(?:md|html))\)', text)]
+    for rel in sorted(set(linked)):
+        if not inside(root, rel).is_file():
+            problems.append(f'MEMORY.md: dead link -> {rel}')
+        if linked.count(rel) > 1:
+            problems.append(f'MEMORY.md: duplicate pointer -> {rel}')
+    if MARKER in text:
+        if text != render_index(notes, text):
+            problems.append('MEMORY.md: generated index is stale')
+    else:
+        for rel in sorted({n.rel for n in notes} - set(linked)):
+            problems.append(f'{rel}: MEMORY.md 인덱스에 포인터 없음')
     if problems:
-        print(f"LINT 문제 {len(problems)}건:")
-        for x in problems:
-            print("  -", x)
-        sys.exit(1)
-    print(f"OK — 노트 {len(notes)}개, 인덱스 링크 {len(linked)}개, 문제 0")
+        raise ValueError('\n'.join(problems))
+    print(f'OK — 노트 {len(notes)}개, 인덱스 링크 {len(linked)}개, 문제 0')
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    cli(main)

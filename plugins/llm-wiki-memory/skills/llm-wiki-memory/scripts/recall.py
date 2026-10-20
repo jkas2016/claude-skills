@@ -1,51 +1,33 @@
 #!/usr/bin/env python3
-"""Recall: print the vault index, and (with keywords) the bodies of matching notes.
-Run this BEFORE producing or recommending anything — that's the step that gets skipped.
-
-Usage:
-  python recall.py                 # just the MEMORY.md index
-  python recall.py html pr serif   # index + every note whose text contains any keyword
-"""
-import os
-import pathlib
-import sys
-
-sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔(cp949)에서도 한글·em-dash 출력
-sys.stderr.reconfigure(encoding="utf-8")
-
-ROOTS = ("user", "feedback", "project", "reference", "projects")
+"""Ranked summaries by default. Explicit original/index reads also have a byte budget."""
+import argparse
+from memory import budget, cli, emit, inside, load_notes, note_path, positive, select, vault
 
 
-def vault() -> pathlib.Path:
-    v = os.environ.get("LLM_WIKI_PATH")
-    if not v or not os.path.isdir(v):
-        sys.exit(f"LLM_WIKI_PATH 미설정/없음: {v!r}")
-    return pathlib.Path(v)
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('keywords', nargs='*')
+    ap.add_argument('--project', help='프로젝트 + 전역 노트로 범위 제한')
+    ap.add_argument('--include-inactive', action='store_true')
+    modes = ap.add_mutually_exclusive_group()
+    modes.add_argument('--read', metavar='RELATIVE_PATH', help='상태와 무관하게 선택 원문 읽기')
+    modes.add_argument('--index', action='store_true', help='전체 인덱스 읽기')
+    ap.add_argument('--limit', type=positive, default=8)
+    ap.add_argument('--max-bytes', type=budget, default=8192)
+    args = ap.parse_args()
+    root = vault()
+    if args.read:
+        text = f'=== {args.read} ===\n' + note_path(root, args.read).read_text(encoding='utf-8')
+    elif args.index:
+        text = inside(root, 'MEMORY.md').read_text(encoding='utf-8')
+    else:
+        hits = select(load_notes(root), args.keywords, args.project, args.include_inactive)
+        text = f'Memory results: {min(len(hits), args.limit)}/{len(hits)}; read with --read PATH\n'
+        text += ''.join(n.summary() for n in hits[:args.limit])
+        if len(hits) > args.limit:
+            text += '[omitted: result limit; narrow search or raise --limit]\n'
+    emit(text, args.max_bytes, whole_lines=not args.read)
 
 
-def main() -> None:
-    vp = vault()
-    idx = vp / "MEMORY.md"
-    print("=== MEMORY.md ===")
-    print(idx.read_text(encoding="utf-8") if idx.exists() else "(없음)")
-
-    kws = [k.lower() for k in sys.argv[1:]]
-    if not kws:
-        return
-
-    print(f"\n=== 매칭 노트 (키워드: {' '.join(kws)}) ===")
-    hits = []
-    for r in ROOTS:
-        for p in (vp / r).rglob("*.md"):
-            text = p.read_text(encoding="utf-8", errors="ignore")
-            if any(k in text.lower() for k in kws):
-                hits.append((p, text))
-    if not hits:
-        print("(매칭 없음)")
-    for p, text in hits:
-        print(f"\n--- {p.relative_to(vp).as_posix()} ---")
-        print(text.strip())
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    cli(main)

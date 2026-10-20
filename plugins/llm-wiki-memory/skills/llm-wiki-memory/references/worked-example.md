@@ -1,49 +1,17 @@
-# Worked example
+# Worked example: save without accumulating another rule
 
-User: "내가 게임플레이 프로그래머야. UE 5.4 위주로 일해."
+사용자가 "PR을 만들 때 검증 결과를 적는 걸 기억해"라고 요청했다.
 
-## 1. 만들기 전 recall
+1. `python3 scripts/recall.py PR 검증`으로 요약을 찾는다.
+2. 관련 결과를 `python3 scripts/recall.py --read feedback/pr_workflow.md`로 읽는다. 잘림 표시가 있으면 예산을 늘린다.
+3. 동일 주제를 다루는 정본이 있다면 그 노트에 조건을 추가한다. 이름만 비슷한 다른 규칙은 덮지 않는다.
+4. `save.py --type feedback --name pr_workflow --key pr-workflow --desc "PR 검증 규칙" --hook "PR 작성: 실행한 검증과 결과를 기록" --check`로 후보를 확인한다.
+5. 검토한 전체 본문을 같은 명령의 stdin으로 주고 `--check`를 빼서 저장한다. `lint.py`로 검증한다.
 
-```
-python scripts/recall.py user identity unreal
-```
+저장 결과가 `consolidation_due=True`이면 완료로 끝내지 않는다. `consolidate.py`로 전체 inventory를 받고 `consolidation.md`의 절차로 검토한다.
 
-인덱스와 관련 노트를 먼저 확인 — 같은 사실이 이미 있는지, 충돌하는지 판단.
+예를 들어 PR 검증 규칙과 PR 체크리스트가 중복이면, 두 원문에서 유효한 조건·예외를 모아 기존 정본을 target으로 하는 merge를 계획한다. 완료된 일회성 PR 계획은 완료 근거를 확인해 drop하고, 독립적인 현재 규칙은 keep한다. 모든 원본이 한 번씩 분류되어야 한다.
 
-## 2. type 판단
+`consolidate.py --plan /tmp/plan.json`으로 삭제 목록·갱신 본문·인덱스를 확인한 뒤 `--apply`한다. 이때 중복 원문 파일은 실제 삭제되고, 남은 참조는 정본으로 바뀌며, MEMORY.md는 짧은 탐색 지도로 재생성된다. `lint.py`와 전후 파일 수를 확인하고 실제 병합/삭제 수 및 복구 백업 경로를 보고한다. superseded 표시만 하고 정리했다고 하지 않는다.
 
-정체성·직무 → `user`. (판단 기준은 `references/conventions.md`.)
-
-## 3. 저장 (frontmatter·날짜·인덱스를 스크립트가 처리)
-
-```
-python scripts/save.py --type user --name user_role \
-  --desc "게임플레이 프로그래머, UE 5.4 중심 작업" \
-  --tags "identity,gamedev,unreal" --alias "게임플레이 프로그래머" \
-  --hook "UE 5.4 중심, 게임플레이 프로그래밍이 주영역" <<'EOF'
-게임플레이 프로그래머. 주 작업 환경은 Unreal Engine 5.4.
-
-**Why:** 사용자가 직무·도구를 명시적으로 공유.
-
-**How to apply:** Unreal/C++/게임플레이 질문에 UE 5.4를 default로 가정.
-EOF
-```
-
-→ `user/user_role.md` 생성 + `MEMORY.md`의 `## user`에 포인터 자동 추가. `created`/`updated`는 오늘 날짜로 자동 기입.
-
-## 4. 검증
-
-```
-python scripts/lint.py
-```
-
-7필드·인덱스↔파일·dead link를 검사. 문제 0이면 끝.
-
-## 5. 갱신·삭제
-
-- **갱신**: 같은 `save.py`를 재실행 — `created`는 보존되고 `updated`만 오늘로 바뀐다.
-- **삭제**: 파일을 지운 뒤 `lint.py`를 돌려 "인덱스에 포인터 없음 / dead link"로 잡히는 줄을 `MEMORY.md`에서 제거.
-
-## Read-before-act
-
-메모리가 명명한 파일 경로·함수·플래그를 사용자에게 추천하기 전에 실제 존재를 확인(grep/파일 읽기)한다. "현재" 상태는 메모리 스냅샷보다 `git log`/파일이 우선. stale면 그 자리서 `save.py`로 갱신하거나 삭제.
+사용자가 "README.md를 만들어줘"라고만 요청했다면 지정된 저장소 파일을 만든다. 그것은 LLM-Wiki 저장 요청이 아니다.
