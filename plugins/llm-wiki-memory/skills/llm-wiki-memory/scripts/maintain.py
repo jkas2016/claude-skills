@@ -59,6 +59,8 @@ def prepare(root, plan):
             raise ValueError('변경 내용 없음')
         if fields.get('status') in ('active', 'archived'):
             fields['superseded_by'] = None
+        if 'description' in fields:
+            fields['index_hook'] = fields['description']
         fields['updated'] = today()
         text = edit_note(before.decode('utf-8'), fields, change.get('body'))
         n = by_path[rel]

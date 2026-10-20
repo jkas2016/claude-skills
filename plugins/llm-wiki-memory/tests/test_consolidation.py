@@ -157,6 +157,9 @@ class Consolidation(unittest.TestCase):
         p.write_text(json.dumps({'changes':[{'path':'feedback/rule.md','sha256':hashlib.sha256(a.read_bytes()).hexdigest(),
                          'description':'new description','reason':'update'}]}))
         self.run_cli('maintain.py',str(p),'--apply')
+        self.assertIn('index_hook: "new description"', a.read_text())
+        self.assertIn('— new description', (self.vault/'MEMORY.md').read_text())
+        self.assertNotIn('— old', (self.vault/'MEMORY.md').read_text())
         self.run_cli('lint.py')
 
     def test_keep_preserves_crlf_bytes(self):
@@ -175,6 +178,30 @@ class Consolidation(unittest.TestCase):
                                    'description':'combined','body':'A and B','reason':'merge'}])
         self.run_cli('consolidate.py','--plan',p,'--apply',ok=False)
         self.assertTrue(b.exists())
+
+    def test_root_html_prevents_merge_and_drop(self):
+        self.note('feedback/a.md', body='A')
+        b = self.note('feedback/b.md', body='B')
+        report = self.vault / 'report.html'
+        report.write_text('<a href="feedback/b.md">source</a>')
+        before = {p: p.read_bytes() for p in [b, report, self.vault/'MEMORY.md']}
+        for action in [
+            {'op':'merge','target':'feedback/a.md','sources':['feedback/b.md'],
+             'description':'combined','body':'A and B','reason':'merge'},
+            {'op':'drop','path':'feedback/b.md','reason':'obsolete','evidence':'reviewed'},
+        ]:
+            with self.subTest(op=action['op']):
+                for path, data in before.items():
+                    path.write_bytes(data)
+                actions = [action]
+                if action['op'] == 'drop':
+                    actions.append({'op':'keep','path':'feedback/a.md','reason':'valid'})
+                plan = self.consolidation_plan(actions)
+                result = self.run_cli('consolidate.py','--plan',plan,'--apply',ok=False)
+                self.assertIn('report.html:', result.stderr)
+                self.assertIn('incoming link', result.stderr)
+                for path, data in before.items():
+                    self.assertEqual(path.read_bytes(), data)
 
     def test_drop_refuses_html_title_and_wiki_filename_references(self):
         for form in ['[source](../feedback/b.md "title")','<a href="../feedback/b.md">source</a>','[[b.md]]']:

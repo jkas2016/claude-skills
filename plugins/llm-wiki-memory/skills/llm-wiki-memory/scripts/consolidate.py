@@ -142,6 +142,7 @@ def prepare(root,plan):
     validate_lifecycle(list(result.values()))
     # Non-note root documents and HTML are not silently edited. Refuse dangling references.
     external=[p for p in root.glob('*.md') if p.name!='MEMORY.md']
+    external.extend(root.glob('*.html'))
     for dirname in ('user','feedback','project','reference','projects'):
         external.extend(inside(root,dirname).rglob('*.html'))
         external.extend(p for p in inside(root,dirname).rglob('*.md') if p.relative_to(root).as_posix() not in original)
