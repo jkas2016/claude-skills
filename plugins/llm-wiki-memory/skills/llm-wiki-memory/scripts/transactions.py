@@ -1,5 +1,8 @@
 """Recoverable multi-file writes. Local lock; hashes detect, but cannot lock, iCloud peers."""
 import json
+import datetime
+import re
+import sys
 import uuid
 from memory import atomic_write, digest, inside
 
@@ -15,19 +18,26 @@ def apply_batch(root, changes):
             raise ValueError(f'동시 변경: {rel}')
     entries = [{'path': rel,
                 'before': before.decode('utf-8') if before is not None else None,
-                'after': after.decode('utf-8'), 'after_sha256': digest(after)}
+                'after': after.decode('utf-8') if after is not None else None,
+                'after_sha256': digest(after) if after is not None else None}
                for rel, before, after in changes]
     backup = '.memory-backups/' + uuid.uuid4().hex + '.json'
-    atomic_write(inside(root, backup), json.dumps({'version': 1, 'entries': entries},
-                 ensure_ascii=False, indent=2).encode('utf-8'))
+    manifest = {'version': 2, 'owner': 'llm-wiki-memory', 'status': 'prepared',
+                'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'entries': entries}
+    atomic_write(inside(root, backup), json.dumps(manifest, ensure_ascii=False, indent=2).encode('utf-8'))
     written = []
     try:
         for rel, before, after in changes:
             path = inside(root, rel)
             if read_optional(path) != before:
                 raise ValueError(f'동시 변경: {rel}')
-            atomic_write(path, after)
+            if after is None:
+                path.unlink()
+            else:
+                atomic_write(path, after)
             written.append((path, before, after))
+        manifest['status'] = 'committed'
+        atomic_write(inside(root, backup), json.dumps(manifest, ensure_ascii=False, indent=2).encode('utf-8'))
     except BaseException:
         for path, before, after in reversed(written):
             if read_optional(path) == after:
@@ -36,7 +46,27 @@ def apply_batch(root, changes):
                 else:
                     atomic_write(path, before)
         raise
+    try:
+        prune_backups(root, keep=20)
+    except OSError as exc:
+        print(f'백업 보관 개수 정리 실패 (변경은 적용됨): {exc}', file=sys.stderr)
     return backup
+
+
+def prune_backups(root, keep):
+    """Bound only our committed v2 backups. Never remove legacy/interrupted bundles."""
+    candidates = []
+    for path in inside(root, '.memory-backups').glob('*.json'):
+        if path.is_symlink() or not re.fullmatch(r'[0-9a-f]{32}\.json', path.name):
+            continue
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+            if data.get('version') == 2 and data.get('owner') == 'llm-wiki-memory' and data.get('status') == 'committed':
+                candidates.append((data['created_at'], path))
+        except (ValueError, KeyError, AttributeError):
+            continue
+    for _, path in sorted(candidates, reverse=True)[keep:]:
+        path.unlink()
 
 
 def restore_batch(root, backup, apply=False):
@@ -48,14 +78,14 @@ def restore_batch(root, backup, apply=False):
     seen = set()
     for entry in entries:
         rel = entry['path']
-        if rel in seen or (rel != 'MEMORY.md' and rel.split('/')[0] not in
+        if rel in seen or (rel not in ('MEMORY.md', '.memory-state.json') and rel.split('/')[0] not in
                            ('user', 'feedback', 'project', 'reference', 'projects')):
             raise ValueError(f'잘못된 백업 경로: {rel}')
         seen.add(rel)
         path = inside(root, rel)
-        after = entry['after'].encode('utf-8')
+        after = entry['after'].encode('utf-8') if entry['after'] is not None else None
         before = entry['before'].encode('utf-8') if entry['before'] is not None else None
-        if digest(after) != entry['after_sha256']:
+        if (digest(after) if after is not None else None) != entry['after_sha256']:
             raise ValueError('백업 무결성 오류')
         current = read_optional(path)
         # Accept before too: a killed process may have applied only part of the batch.

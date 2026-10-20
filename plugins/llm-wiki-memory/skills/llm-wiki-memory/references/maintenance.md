@@ -1,5 +1,7 @@
 # Memory lifecycle and bounded context
 
+0.3부터 실제 문서 누적 정리는 **`consolidation.md`의 merge/drop 흐름**을 사용한다. 아래 상태 편집은 호환용이며 파일 수·인덱스 항목을 줄이는 consolidation의 대체가 아니다.
+
 ## Context / hook
 
 `MEMORY.md`는 전체 탐색 인덱스다. 컨텍스트 출력만 별도로 줄인다. 기존 7필드 노트는 active이고 자동 pin되지 않는다. 선택 메타데이터:
@@ -46,7 +48,7 @@ python3 scripts/audit.py > /tmp/memory-audit.json
 
 외부 API·LLM 호출 없이 Markdown 노트만 검사한다. 후보는 동일 범위의 동일 본문, 유사 설명, 장문(기본 6000 bytes), 완료 표현, 갱신 180일 경과다. HTML 분석 문서는 검색·정리 대상이 아니며 인덱스의 HTML 링크만 lint한다. 임계값은 `--help` 참조. 나이는 재검증 신호이고 효용·진실성·폐기 판정이 아니다. URL 도달 여부나 외부 사실의 유효성은 검사하지 않는다.
 
-정리 주기: 저장 전에는 같은 주제의 기존 정본을 조회한다. 사용자가 정기 점검을 요청하면 audit를 실행하고, 후보를 실제로 읽어 처리한다. 무단 스케줄 등록·세션 시작 시 쓰기는 하지 않는다. 자동 반복 감사는 사용자가 별도 요청할 때만 설정한다.
+정리 주기: 저장 전에는 같은 주제의 기존 정본을 조회한다. 사용자가 정기 점검을 요청하면 audit를 실행하고, 후보를 실제로 읽어 처리한다. 무단 스케줄 등록·세션 시작 시 쓰기는 하지 않는다. 0.3에서는 저장 누적/인덱스 크기로 정리가 필요해지면 신규 생성을 막고 호스트가 consolidation을 수행한다. 자동 반복 감사는 사용자가 별도 요청할 때만 설정한다.
 
 후보 검토:
 
@@ -92,7 +94,7 @@ python3 scripts/lint.py
 
 ## Backup / recovery
 
-save와 maintain은 `.memory-backups/<id>.json`에 변경 전후 내용을 기록한다. 백업은 기본 검색에서 제외하며 자동 삭제하지 않는다. 민감한 원문도 들어 있으므로 vault와 같은 접근 범위로 취급한다.
+save와 maintain은 `.memory-backups/<id>.json`에 변경 전후 내용을 기록한다. 백업은 기본 검색에서 제외한다. 0.3에서 만든 정상 완료 bundle은 최근 20개만 유지하며, 0.2 및 중단된 bundle은 자동 삭제하지 않는다. 민감한 원문도 들어 있으므로 vault와 같은 접근 범위로 취급한다.
 
 ```bash
 python3 scripts/maintain.py --restore .memory-backups/<id>.json
@@ -100,7 +102,7 @@ python3 scripts/maintain.py --restore .memory-backups/<id>.json --apply
 python3 scripts/lint.py
 ```
 
-복구 전 모든 대상이 백업의 변경 전 또는 후 상태인지 검사한다. 이후 편집이 있으면 전체 사전검증에서 거부한다. save로 새로 생성된 파일은 복구 시 제거된다. 일반 유지관리는 파일을 삭제하지 않는다.
+복구 전 모든 대상이 백업의 변경 전 또는 후 상태인지 검사한다. 이후 편집이 있으면 전체 사전검증에서 거부한다. save로 새로 생성된 파일은 복구 시 제거된다. 이 문서의 상태 편집은 파일을 삭제하지 않는다. `consolidate.py`의 merge/drop은 파일을 삭제하며 같은 복구 경로로 원문을 되살릴 수 있다.
 
 각 파일은 원자적으로 교체하고 로컬 쓰기는 `.memory-lock`으로 직렬화한다. 적용 중 일반 오류는 이미 쓴 파일을 이전 상태로 되돌린다. 프로세스 강제 종료/전원 중단은 일부 적용 상태를 남길 수 있다. **실행 중인 writer가 없는지 확인 후** 남은 lock을 제거하고 출력된/최근 백업으로 복구한다. 복구 도중 중단되었어도 같은 백업으로 재시도할 수 있다.
 

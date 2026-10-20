@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from memory import STATUSES, cli, digest, edit_note, load_notes, locked, note_path, split_note, today, vault
 from transactions import apply_batch, restore_batch
+from registry import MARKER, STATE, next_state, render_index
 
 
 def validate_lifecycle(notes):
@@ -79,8 +80,12 @@ def prepare(root, plan):
                 desc = ' '.join(str(change['description']).split())
                 pattern = r'^(.*\]\(' + re.escape(change['path']) + r'\))[^\n]*$'
                 index_text = re.sub(pattern, lambda m: m[1] + ' — ' + desc, index_text, flags=re.M)
+        if MARKER in index_text:
+            index_text = render_index(notes, index_text)
         if index_text.encode('utf-8') != old_index:
             batch.append(('MEMORY.md', old_index, index_text.encode('utf-8')))
+    from transactions import read_optional
+    batch.append((STATE, read_optional(inside(root, STATE)), next_state(root, notes)))
     return batch, preview
 
 

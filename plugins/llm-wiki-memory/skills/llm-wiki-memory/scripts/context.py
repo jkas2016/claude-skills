@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 from memory import budget, cli, emit, load_notes, vault
+from registry import due, state
 
 
 def main():
@@ -30,8 +31,10 @@ def main():
     matching = [(Path(p).expanduser().resolve(), name) for p, name in mappings.items()
                 if cwd.is_relative_to(Path(p).expanduser().resolve())]
     project = max(matching, key=lambda pair: len(pair[0].parts))[1] if matching else None
-    pins = config.get('pinned', [])
-    notes = [n for n in load_notes(root) if n.status == 'active']
+    redirects = state(root).get('redirects', {})
+    pins = [redirects.get(p, p) for p in config.get('pinned', [])]
+    all_notes = load_notes(root)
+    notes = [n for n in all_notes if n.status == 'active']
     selected = [n for n in notes if (not n.project or n.project == project) and
                 (n.rel in pins or n.meta.get('pinned') == 'true' or (project and n.project == project))]
     selected.sort(key=lambda n: (0 if n.rel in pins or n.meta.get('pinned') == 'true' else 1, n.rel))
@@ -40,6 +43,9 @@ def main():
             f'Before applying a rule, read its source. Search relevant memories with:\n'
             f'python3 "{recall}" KEYWORDS [--project NAME]; use --read PATH for full text.\n'
             'Other memories remain searchable; summaries are not the complete vault.\n')
+    if due(root, all_notes)['due']:
+        text += ('Memory consolidation is due. Before creating another memory, read this plugin SKILL.md and run '
+                 'consolidate.py; review/merge/prune stored notes and rebuild MEMORY.md.\n')
     if not selected:
         text += 'No pinned/current-project memories configured; use targeted recall.\n'
     text += ''.join(n.summary() for n in selected)

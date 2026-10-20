@@ -2,8 +2,10 @@
 """Validate required fields, index links, dates and lifecycle targets without changing files."""
 import datetime as dt
 import re
+from urllib.parse import unquote
 from memory import FIELDS, cli, inside, load_notes, vault
 from maintain import validate_lifecycle
+from registry import MARKER, render_index
 
 
 def main():
@@ -29,14 +31,18 @@ def main():
         problems.append(str(exc))
     idx = inside(root, 'MEMORY.md')
     text = idx.read_text(encoding='utf-8') if idx.exists() else ''
-    linked = re.findall(r'\]\(([^)]+\.(?:md|html))\)', text)
+    linked = [unquote(link) for link in re.findall(r'\]\(([^)]+\.(?:md|html))\)', text)]
     for rel in sorted(set(linked)):
         if not inside(root, rel).is_file():
             problems.append(f'MEMORY.md: dead link -> {rel}')
         if linked.count(rel) > 1:
             problems.append(f'MEMORY.md: duplicate pointer -> {rel}')
-    for rel in sorted({n.rel for n in notes} - set(linked)):
-        problems.append(f'{rel}: MEMORY.md 인덱스에 포인터 없음')
+    if MARKER in text:
+        if text != render_index(notes, text):
+            problems.append('MEMORY.md: generated index is stale')
+    else:
+        for rel in sorted({n.rel for n in notes} - set(linked)):
+            problems.append(f'{rel}: MEMORY.md 인덱스에 포인터 없음')
     if problems:
         raise ValueError('\n'.join(problems))
     print(f'OK — 노트 {len(notes)}개, 인덱스 링크 {len(linked)}개, 문제 0')
