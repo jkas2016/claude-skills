@@ -29,7 +29,7 @@ packet에는 현재 파일/index/state 해시, scope별 그룹, 설명/상태/�
 2. **규칙을 추출한다.** 사건 경과·로그·코드 복제에서 지속적으로 쓸 결론, 이유, 적용 조건, 예외, 검증 근거를 분리한다. 코드/문서에 이미 있는 상세는 정본 위치를 가리킨다.
 3. **개념별 정본을 고른다.** 같은 의미의 노트는 하나의 기존 노트를 정본으로 정하고 merge한다. 조건/예외가 다르면 구분해서 남긴다. 충돌은 최신 날짜만으로 해결하지 말고 근거를 검증한다.
 4. **죽은 기억을 제거한다.** 더 이상 적용되지 않음을 확인한 내용·완료된 일회성 계획·정본으로 완전히 대체된 내용은 drop한다. `reason`과 `evidence`를 적는다. 원문이 계속 필요한 독립 기록이면 keep할 수 있지만, 단순히 삭제가 불안하다는 이유로 매번 보관 문서를 추가하지 않는다.
-5. 모든 노트를 keep/update/merge/drop 중 하나로 분류한다. 미해결 모순은 keep 이유로 명시하고 추측으로 합치지 않는다. 전체 검토를 가장한 기계적인 keep 목록을 만들지 않는다.
+5. 모든 노트를 keep/update/merge/drop/compress/archive 중 하나로 분류한다. 미해결 모순은 keep 이유로 명시하고 추측으로 합치지 않는다. 전체 검토를 가장한 기계적인 keep 목록을 만들지 않는다.
 
 ## 계획 형식
 
@@ -53,10 +53,12 @@ packet의 `snapshot`을 **그대로** 복사한다. 최상위 `actions`는 각 �
 }
 ```
 
+- compress: `path, body, description, reason`. 정본은 요약으로 바꾸고 원문은 `_archive/`에 복사한다. 정본의 `full_text`로 원문을 찾는다.
+- archive: `path, reason`. 원문을 `_archive/<path>`로 옮긴다. 활성 참조가 남아 있거나 pinned이면 적용을 거부한다.
 - update: `path, body, description, reason`. 불필요한 사건 기록을 축약할 때 사용한다.
 - merge: 동일 프로젝트/type의 기존 target에 통합하고 sources를 **실제로 삭제**한다. 별도 archived 문서를 만들지 않는다. 대상의 key/pin을 계승한다.
 - drop: 해당 파일을 **실제로 삭제**한다. 다른 기억이 참조 중이면 먼저 그 참조를 갱신하는 update를 같은 계획에 넣는다.
-- keep: 원문을 보존한다. merge로 참조 대상이 바뀌면 링크만 자동 갱신될 수 있다.
+- keep: 원문을 보존한다. 퇴역 후보를 keep하면 30일간 다시 후보로 올리지 않는다. merge로 참조 대상이 바뀌면 링크만 자동 갱신될 수 있다.
 
 ```bash
 python3 scripts/consolidate.py --plan /tmp/plan.json
@@ -64,7 +66,7 @@ python3 scripts/consolidate.py --plan /tmp/plan.json --apply
 python3 scripts/lint.py
 ```
 
-dry-run의 `deleted`, `rewritten`, `index_preview`, 전후 개수를 검토한다. 사용자에게 이미 승인된 정리 범위면 반복 승인 없이 적용한다. 새 사실/중요한 선택이 불확실하면 그 항목을 유지하고 확인한다.
+dry-run의 `deleted`, `purge`, `rewritten`, `index_preview`, 전후 개수를 검토한다. 사용자에게 이미 승인된 정리 범위면 반복 승인 없이 적용한다. 새 사실/중요한 선택이 불확실하면 그 항목을 유지하고 확인한다.
 
 ## 실제 파일·인덱스 처리
 
@@ -72,7 +74,13 @@ dry-run의 `deleted`, `rewritten`, `index_preview`, 전후 개수를 검토한�
 - root 및 하위 README/MEMORY, HTML 자료처럼 일반 노트가 아닌 문서의 참조는 자동 수정하지 않는다. 삭제 예정 파일을 가리키면 적용을 거부한다. 먼저 해당 문서의 소유 범위에 맞춰 수정한다.
 - `MEMORY.md`는 활성 정본의 작은 핵심 목록과 scope별 디렉터리 탐색 지도로 재생성한다. 전체 파일별 포인터를 계속 붙이지 않는다. 전체 검색은 recall이 파일에서 수행한다. 기존 HTML 분석 자료 포인터는 보존한다. 추가 index 문서를 매번 만들지 않는다.
 - 생성 인덱스는 8192 bytes 상한이다. 범위가 너무 많아 넘으면 적용을 거부한다. 중요한 범위를 잘라내고 성공했다고 하지 않는다.
-- 기존 key는 정본에 계승하며 기기별 pin 유지를 위한 작은 redirect 메타데이터를 state에 남긴다. 옛 경로에 대한 recall --read 호출은 지원하지 않으므로 새 정본 경로를 사용한다. 삭제된 문서 전문은 활성 폴더나 MEMORY.md에 남기지 않는다.
+- 기존 key는 정본에 계승하며 기기별 pin 유지를 위한 작은 redirect 메타데이터를 state에 남긴다. `recall.py --read`와 신규 저장 대상 판정에서 merge된 옛 경로를 정본으로 해석한다. 삭제된 문서 전문은 활성 폴더나 MEMORY.md에 남기지 않는다.
+
+## 퇴역 후보와 보관 기간
+
+30일 넘게 읽히지 않은 active 노트를 퇴역 후보로 표시한다. 읽은 적이 없으면 추적 시작일과 생성일 중 나중 날짜부터 센다. pinned와 user 노트는 제외한다. 추적 기록이 없는 vault에서는 후보를 만들지 않는다. 후보는 검토자가 결정하며 active 노트는 나이만으로 삭제하지 않는다.
+
+통폐합에서 승인한 archive와 compress의 원문 사본은 보관일과 마지막 읽기 중 나중 시점으로부터 60일을 넘었을 때 다음 적용에서 삭제한다. 압축 사본을 삭제하면 정본의 `full_text`도 같은 배치에서 지운다. dry-run에서 `purge`를 확인한다.
 
 ## 복구와 보관 상한
 

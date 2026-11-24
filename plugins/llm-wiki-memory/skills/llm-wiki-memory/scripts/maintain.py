@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Validate a reviewable JSON plan; --apply backs up and applies it, --restore reverses it."""
 import argparse
+from datetime import datetime, timezone
 from contextlib import nullcontext
 import json
 from pathlib import Path
-from memory import STATUSES, cli, digest, edit_note, load_notes, locked, note_path, split_note, today, vault
-from transactions import apply_batch, restore_batch
+from memory import Note, STATUSES, cli, digest, edit_note, inside, load_notes, locked, note_path, split_note, today, vault
+from transactions import apply_batch, read_optional, restore_batch
 from registry import MARKER, STATE, next_state, render_index
+from usage import summary as usage_summary
 
 
 def validate_lifecycle(notes):
@@ -83,7 +85,7 @@ def prepare(root, plan):
                 pattern = r'^(.*\]\(' + re.escape(change['path']) + r'\))[^\n]*$'
                 index_text = re.sub(pattern, lambda m: m[1] + ' — ' + desc, index_text, flags=re.M)
         if MARKER in index_text:
-            index_text = render_index(notes, index_text)
+            index_text = render_index(notes, index_text, usage_summary(root, datetime.now(timezone.utc)).notes)
         if index_text.encode('utf-8') != old_index:
             batch.append(('MEMORY.md', old_index, index_text.encode('utf-8')))
     from transactions import read_optional
@@ -91,18 +93,51 @@ def prepare(root, plan):
     return batch, preview
 
 
+def prepare_unarchive(root, rel):
+    path = note_path(root, rel)
+    if not rel.startswith('_archive/') or '.full-' in path.stem:
+        raise ValueError('unarchive requires a regular _archive note')
+    before = path.read_bytes()
+    text = before.decode('utf-8')
+    _, meta, _ = split_note(text)
+    target = meta.get('archived_from')
+    if meta.get('status') != 'archived' or target != rel.removeprefix('_archive/'):
+        raise ValueError('invalid archived_from or status')
+    if note_path(root, target).exists():
+        raise ValueError(f'unarchive destination exists: {target}')
+    fields = {key: None for key in meta if key == 'status' or key.startswith('archived_')}
+    restored = edit_note(text, fields)
+    _, restored_meta, body = split_note(restored)
+    notes = load_notes(root) + [Note(target, restored, restored_meta, body)]
+    validate_lifecycle(notes)
+    old_index = read_optional(inside(root, 'MEMORY.md'))
+    usage = usage_summary(root, datetime.now(timezone.utc)).notes
+    if rel in usage:
+        usage[target] = usage[rel]
+    index = render_index(notes, (old_index or b'').decode(), usage)
+    return [(rel, before, None), (target, None, restored.encode()),
+            ('MEMORY.md', old_index, index.encode()),
+            (STATE, read_optional(inside(root, STATE)), next_state(root, notes))], {'restored': target}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('plan', nargs='?')
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--restore', metavar='BACKUP_RELATIVE_PATH')
+    ap.add_argument('--unarchive', metavar='ARCHIVE_PATH')
     args = ap.parse_args()
-    if bool(args.plan) == bool(args.restore):
-        ap.error('plan 또는 --restore 하나 필요')
+    if sum(map(bool, (args.plan, args.restore, args.unarchive))) != 1:
+        ap.error('plan, --restore 또는 --unarchive 하나 필요')
     root = vault()
     with locked(root) if args.apply else nullcontext():
         if args.restore:
             result = restore_batch(root, args.restore, args.apply)
+        elif args.unarchive:
+            batch, result = prepare_unarchive(root, args.unarchive)
+            result['mode'] = 'apply' if args.apply else 'dry-run'
+            if args.apply:
+                result['backup'] = apply_batch(root, batch)
         else:
             batch, preview = prepare(root, json.loads(Path(args.plan).read_text(encoding='utf-8')))
             result = {'mode': 'apply' if args.apply else 'dry-run', 'changes': preview}

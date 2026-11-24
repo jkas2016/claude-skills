@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from memory import budget, cli, emit, load_notes, vault
 from registry import due, state
+from usage import record_exposed
 
 
 def main():
@@ -49,7 +50,8 @@ def main():
     if not selected:
         text += 'No pinned/current-project memories configured; use targeted recall.\n'
     text += ''.join(n.summary() for n in selected)
-    emit(text, args.max_bytes, whole_lines=True)
+    output = emit(text, args.max_bytes, whole_lines=True)
+    record_exposed(root, selected, output, 'context')
 
 
 if __name__ == '__main__':

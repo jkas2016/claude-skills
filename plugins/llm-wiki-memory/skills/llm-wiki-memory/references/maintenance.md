@@ -107,3 +107,17 @@ python3 scripts/lint.py
 각 파일은 원자적으로 교체하고 로컬 쓰기는 `.memory-lock`으로 직렬화한다. 적용 중 일반 오류는 이미 쓴 파일을 이전 상태로 되돌린다. 프로세스 강제 종료/전원 중단은 일부 적용 상태를 남길 수 있다. **실행 중인 writer가 없는지 확인 후** 남은 lock을 제거하고 출력된/최근 백업으로 복구한다. 복구 도중 중단되었어도 같은 백업으로 재시도할 수 있다.
 
 iCloud의 다른 기기나 Obsidian의 편집까지 잠글 수는 없다. 해시 검사는 충돌을 감지하지만 분산 트랜잭션은 아니다. 같은 노트를 여러 기기에서 동시에 정리하지 않는다. 백업을 직접 편집하지 않는다.
+
+
+## 사용량과 보관 원문
+
+`recall.py --read PATH`는 실제 읽기 1건을 기록한다. 검색과 세션 주입은 표시한 요약을 노출로 기록한다. `--index`는 기록을 남기지 않는다. 기기별 로그는 vault의 `.memory-usage/`에 저장하며 기기 ID는 로컬 상태 디렉터리에 둔다. 같은 기기의 append와 90일 초과 로그 압축에는 짧은 잠금을 사용한다. 사용 기록은 vault 스냅샷과 변경 복구 백업의 범위 밖이다.
+
+```bash
+python3 scripts/usage.py --report --days 30
+python3 scripts/recall.py --read _archive/feedback/example.md
+python3 scripts/maintain.py --unarchive _archive/feedback/example.md
+python3 scripts/maintain.py --unarchive _archive/feedback/example.md --apply
+```
+
+복원 대상 위치에 노트가 있으면 중단한다. 압축 원문 사본은 `--read`로 열 수 있다.

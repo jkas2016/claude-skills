@@ -49,15 +49,21 @@ def html_pointers(index):
     return sorted(set(line for line in index.splitlines() if re.search(r'\]\([^)]*\.html\)',line)))
 
 
-def render_index(notes, old_index=''):
+def render_index(notes, old_index='', usage=None):
     active=[n for n in notes if n.status=='active']
     groups=defaultdict(list)
     for n in active:groups[scope(n)].append(n)
     lines=['# MEMORY',MARKER,'',
            '활성 정본 탐색 지도. 전체 목록/원문은 recall.py로 검색한다. 생성 파일이므로 직접 누적하지 않는다.','',
            '## 핵심 기억','']
-    core=sorted([n for n in active if not n.project],
-                key=lambda n:(n.meta.get('pinned')!='true',n.meta.get('type')!='user',n.rel))[:8]
+    def core_order(note):
+        pinned = note.meta.get('pinned') == 'true'
+        stats = (usage or {}).get(note.rel)
+        reads = stats.reads_30d if stats and not pinned else 0
+        recency = -stats.last_read.timestamp() if reads and stats.last_read else 0
+        return not pinned, -reads, recency, note.meta.get('type') != 'user', note.rel
+
+    core = sorted((note for note in active if not note.project), key=core_order)[:8]
     for n in core:
         summary=' '.join(str(n.meta.get('index_hook',n.meta.get('description',n.rel))).split())[:100]
         lines.append(f'- [{n.meta.get("name",Path(n.rel).stem)}]({quote(n.rel,safe="/")}) — {summary}')
