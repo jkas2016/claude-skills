@@ -4,7 +4,6 @@
   "owner": { "name": "jkas2016" },
   "plugins": [
     { "name": "deep-code-review", "source": "./plugins/deep-code-review" },
-    { "name": "llm-wiki-memory",  "source": "./plugins/llm-wiki-memory" },
-    { "name": "orca-worktree", "source": "./plugins/orca-worktree" }
+    { "name": "llm-wiki-memory",  "source": "./plugins/llm-wiki-memory" }
   ]
 }
