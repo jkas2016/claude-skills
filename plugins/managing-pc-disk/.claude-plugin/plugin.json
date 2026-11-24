@@ -1,0 +1,8 @@
+{
+  "name": "managing-pc-disk",
+  "version": "1.0.0",
+  "description": "Inspect macOS disk usage and reclaim space from old logs, Docker and Colima, and developer caches with approval.",
+  "author": { "name": "jkas2016" },
+  "license": "Apache-2.0",
+  "keywords": ["macos", "disk", "cleanup"]
+}
