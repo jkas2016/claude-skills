@@ -40,6 +40,32 @@ python3 scripts/install_hook.py --settings ~/.claude/settings.json --config /pat
 
 SessionStart는 stdin JSON의 `cwd`를 제공하며 성공한 hook의 stdout은 컨텍스트에 추가된다. 이 계약은 [Claude Code 공식 hook 문서](https://code.claude.com/docs/en/hooks#sessionstart)를 따른다. `context.py --hook`은 vault 미설정 시 조용히 종료하며 그 밖의 설정 오류는 stderr/비정상 종료로 드러낸다. 기본값은 비동기 hook이 아니다.
 
+### 저장소 훅을 Codex와 Claude에서 함께 사용하기
+
+이 저장소를 각 기기의 고정 경로에 checkout하고, 저장소 루트에서 아래 명령을 실행한다. 링크를 만들 경로에 기존 훅 파일이 있으면 먼저 다른 이름으로 옮겨 백업한다. Python 3.10+와 `jq`가 필요하다.
+
+```bash
+hook="$(pwd -P)/plugins/llm-wiki-memory/hooks/inject-wiki-index.sh"
+mkdir -p "$HOME/.codex/hooks" "$HOME/.claude/hooks"
+ln -s "$hook" "$HOME/.codex/hooks/inject-wiki-index.sh"
+ln -s "$hook" "$HOME/.claude/hooks/inject-wiki-index.sh"
+```
+
+각 도구의 사용자 설정(`~/.codex/hooks.json`, `~/.claude/settings.json`)에서 `hooks.SessionStart`에 아래 그룹을 추가한다. 기존 Wiki 훅이 있으면 해당 항목을 교체하고, 이미 같은 링크 경로를 호출하면 기존 등록을 사용한다. Claude에서는 위 설치기와 함께 등록하면 두 번 주입된다.
+
+```json
+{
+  "hooks": [
+    {
+      "type": "command",
+      "command": "bash \"$HOME/.codex/hooks/inject-wiki-index.sh\" SessionStart"
+    }
+  ]
+}
+```
+
+Claude 설정에서는 명령의 `.codex`를 `.claude`로 바꾼다. 훅은 checkout의 `context.py`를 호출하며 플러그인 캐시 버전 경로에 의존하지 않는다. `LLM_WIKI_PATH`가 비어 있으면 macOS Obsidian iCloud의 `LLM-Wiki` 폴더를 사용한다. 다른 위치는 훅 환경에서 `LLM_WIKI_PATH`로 지정한다. 필요하면 링크와 같은 디렉터리에 기기별 `wiki-context.json`을 두거나 `LLM_WIKI_CONFIG`로 설정 경로를 지정한다. 주입 크기는 플러그인의 기본값을 따른다.
+
 ## Audit / review cadence
 
 ```bash
