@@ -6,15 +6,18 @@ import argparse
 from collections import defaultdict
 from contextlib import nullcontext
 import copy
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import sys
 from urllib.parse import quote, unquote
-from memory import cli, digest, edit_note, inside, load_notes, locked, note_path, split_note, today, vault
+from memory import cli, digest, edit_note, inside, load_archives, load_notes, locked, note_path, split_note, today, vault
 from maintain import validate_lifecycle
 from registry import STATE, due, next_state, render_index, scope, snapshot, state
 from transactions import apply_batch, read_optional
+from usage import NoteUsage, compact, summary as usage_summary
 
 
 def text_field(action, key):
@@ -68,12 +71,62 @@ def rewrite_links(text, rel, replacements, dropped, all_paths, aliases=None):
     return text
 
 
+def note_date(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        time = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return time.replace(tzinfo=timezone.utc) if time.tzinfo is None else time.astimezone(timezone.utc)
+
+
+def retirement_candidates(notes, usage, kept, now):
+    if usage.tracking_since is None:
+        return {}
+    cutoff = now - timedelta(days=30)
+    candidates = {}
+    for note in notes:
+        if note.status != 'active' or note.meta.get('pinned') == 'true' or note.meta.get('type') == 'user':
+            continue
+        kept_at = note_date(kept.get(note.rel))
+        if kept_at is not None and kept_at >= cutoff:
+            continue
+        stats = usage.notes.get(note.rel, NoteUsage())
+        created = note_date(note.meta.get('created')) or usage.tracking_since
+        baseline = stats.last_read or max(usage.tracking_since, created)
+        if baseline < cutoff:
+            candidates[note.rel] = {'reads_total': stats.reads_total, 'exposed_30d': stats.exposed_30d,
+                                    'last_read': stats.last_read.isoformat() if stats.last_read else None,
+                                    'baseline': baseline.isoformat()}
+    return candidates
+
+
+def purge_schedule(archives, usage):
+    schedule = {}
+    for note in archives:
+        archived_at = note_date(note.meta.get('archived_at'))
+        if archived_at is not None:
+            last_read = usage.notes.get(note.rel, NoteUsage()).last_read
+            schedule[note.rel] = max(archived_at, last_read or archived_at) + timedelta(days=60)
+    return schedule
+
+
+def purge_candidates(archives, usage, now):
+    return sorted(rel for rel, deadline in purge_schedule(archives, usage).items() if deadline < now)
+
+
 def packet(root,notes):
     groups=defaultdict(list)
     for n in notes:groups[scope(n)].append(n.rel)
     reviewed=state(root).get('reviewed',{})
-    return {'snapshot':snapshot(root,notes),'maintenance':due(root,notes),
-            'workflow':'Read every source. Decide keep/update/merge/drop; preserve exceptions and evidence. No age-only deletion.',
+    archives = load_archives(root)
+    now = datetime.now(timezone.utc)
+    usage = usage_summary(root, now)
+    kept = state(root).get('retention_kept', {})
+    return {'snapshot':snapshot(root,notes + archives),'maintenance':due(root,notes),
+            'retirement_candidates': retirement_candidates(notes, usage, kept, now),
+            'workflow':'Read every source. Decide keep/update/merge/drop/compress/archive. Active notes are never deleted by age alone. Approved archive files may be purged after 60 days without a read.',
             'groups':dict(groups),'notes':{n.rel:{'description':n.meta.get('description'),
             'status':n.status,'bytes':len(n.text.encode()),'tags':n.meta.get('tags'),
             'changed_since_review':reviewed.get(n.rel)!=digest(n.text.encode())} for n in notes}}
@@ -81,7 +134,15 @@ def packet(root,notes):
 
 def prepare(root,plan):
     notes=load_notes(root)
-    current=snapshot(root,notes)
+    archives = load_archives(root)
+    current = snapshot(root, notes + archives)
+    now = datetime.now(timezone.utc)
+    usage = usage_summary(root, now)
+    kept = dict(state(root).get('retention_kept', {}))
+    retirees = retirement_candidates(notes, usage, kept, now)
+    purge = purge_candidates(archives, usage, now)
+    archive_batch = []
+    archived = set()
     if plan.get('snapshot')!=current:raise ValueError('stale/incomplete snapshot; rescan and review changes')
     original={n.rel:n for n in notes};result=copy.deepcopy(original)
     aliases=defaultdict(list)
@@ -98,7 +159,7 @@ def prepare(root,plan):
             raise ValueError('invalid action fields')
         reason=text_field(action,'reason')
         op=action.get('op')
-        if op not in ('keep','update','merge','drop'):raise ValueError('unknown consolidation operation')
+        if op not in ('keep','update','merge','drop','compress','archive'):raise ValueError('unknown consolidation operation')
         target=action.get('target') if op=='merge' else action.get('path')
         sources=action.get('sources',[]) if op=='merge' else []
         if op=='merge' and (not isinstance(sources,list) or not sources):raise ValueError('merge requires source paths')
@@ -107,6 +168,30 @@ def prepare(root,plan):
         if len(set(paths))!=len(paths) or any(p not in original or p in covered for p in paths):
             raise ValueError('duplicate/unknown action path')
         covered.update(paths)
+        if op == 'keep' and target in retirees:
+            kept[target] = now.isoformat()
+        if op in ('compress', 'archive'):
+            n = original[target]
+            if op == 'archive':
+                if n.meta.get('pinned') == 'true':
+                    raise ValueError(f'{target}: pinned note cannot be archived')
+                archive_rel = f'_archive/{target}'
+                del result[target]
+                removed.add(target)
+                archived.add(target)
+            else:
+                archive_rel = f'_archive/{target[:-3]}.full-{today().replace("-", "")}.md'
+                body = text_field(action, 'body')
+                description = text_field(action, 'description')
+                current_note = result[target]
+                current_note.text = edit_note(n.text, {'description': description, 'index_hook': description,
+                                                         'updated': today(), 'full_text': archive_rel}, body)
+                _, current_note.meta, current_note.body = split_note(current_note.text)
+            if note_path(root, archive_rel).exists():
+                raise ValueError(f'ARCHIVED_EXISTS: {archive_rel}')
+            archive_text = edit_note(n.text, {'status': 'archived', 'archived_at': now.isoformat(),
+                                             'archived_from': target, 'superseded_by': None})
+            archive_batch.append((archive_rel, None, archive_text.encode('utf-8')))
         if op=='drop':
             text_field(action,'evidence')
             del result[target];removed.add(target)
@@ -130,10 +215,12 @@ def prepare(root,plan):
             n.text=edit_note(n.text,fields,body)
             _,n.meta,n.body=split_note(n.text)
         summary.append({'op':op,'paths':paths,'reason':reason})
-    if covered!=set(original):raise ValueError('every snapshot note needs a keep/update/merge/drop decision')
+    if covered!=set(original):raise ValueError('every snapshot note needs a keep/update/merge/drop/compress/archive decision')
     for rel,n in result.items():
         body=rewrite_links(n.body,rel,replacements,removed,set(original),aliases)
         fields={}
+        if n.meta.get('full_text') in purge:
+            fields['full_text'] = None
         if n.meta.get('superseded_by') in replacements:
             fields['superseded_by']=replacements[n.meta['superseded_by']]
         if body!=n.body or fields:
@@ -153,26 +240,41 @@ def prepare(root,plan):
     old_index=read_optional(inside(root,'MEMORY.md'))
     if (digest(old_index) if old_index is not None else None)!=current['MEMORY.md']:
         raise ValueError('index changed during planning')
-    index=render_index(list(result.values()),(old_index or b'').decode())
+    for source, target in replacements.items():
+        source_usage = usage.notes.get(source)
+        if source_usage is None:
+            continue
+        target_usage = usage.notes.setdefault(target, NoteUsage())
+        target_usage.reads_30d += source_usage.reads_30d
+        if source_usage.last_read and (not target_usage.last_read or source_usage.last_read > target_usage.last_read):
+            target_usage.last_read = source_usage.last_read
+    index=render_index(list(result.values()),(old_index or b'').decode(), usage.notes)
     batch=[]
     for rel,n in original.items():
         before=inside(root,rel).read_bytes()
         if digest(before)!=current[rel]:raise ValueError(f'{rel}: changed during planning')
         after=(before if result[rel].text==n.text else result[rel].text.encode()) if rel in result else None
         if before!=after:batch.append((rel,before,after))
+    for rel in purge:
+        before = note_path(root, rel).read_bytes()
+        if digest(before) != current[rel]:
+            raise ValueError(f'{rel}: changed during planning')
+        archive_batch.append((rel, before, None))
+    batch.extend(archive_batch)
     if old_index!=index.encode():batch.append(('MEMORY.md',old_index,index.encode()))
     state_data=json.loads(next_state(root,list(result.values()),consolidated=True))
     redirects=state(root).get('redirects',{})
     for old,target in list(redirects.items()):
-        if target in removed:redirects[old]=replacements.get(target)
-    redirects.update({old:replacements.get(old) for old in removed})
+        if target in removed - archived:redirects[old]=replacements.get(target)
+    redirects.update({old:replacements.get(old) for old in removed - archived})
     state_data['redirects']=redirects
+    state_data['retention_kept'] = {rel: time for rel, time in kept.items() if rel in result}
     old_state=read_optional(inside(root,STATE))
     if (digest(old_state) if old_state is not None else None)!=current[STATE]:
         raise ValueError('state changed during planning')
     batch.append((STATE,old_state,(json.dumps(state_data,ensure_ascii=False,indent=2)+'\n').encode()))
     return batch,{'actions':summary,'notes_before':len(original),'notes_after':len(result),
-                  'deleted':sorted(removed),'rewritten':[rel for rel,_,after in batch if after is not None],
+                  'deleted':sorted(removed - archived),'purge':purge,'rewritten':[rel for rel,_,after in batch if after is not None],
                   'index_before_bytes':len(old_index or b''),'index_after_bytes':len(index.encode()),
                   'index_preview':index}
 
@@ -189,7 +291,12 @@ def main():
         plan=json.loads(Path(args.plan).read_text(encoding='utf-8'))
         batch,result=prepare(root,plan)
         result['mode']='apply' if args.apply else 'dry-run'
-        if args.apply:result['backup']=apply_batch(root,batch)
+        if args.apply:
+            result['backup'] = apply_batch(root, batch)
+            try:
+                compact(root, datetime.now(timezone.utc))
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                print(f'usage compaction failed: {exc}', file=sys.stderr)
         print(json.dumps(result,ensure_ascii=False,indent=2))
 
 

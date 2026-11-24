@@ -41,9 +41,24 @@ def inside(root, rel):
 
 def note_path(root, rel):
     p = Path(rel)
-    if not p.parts or p.parts[0] not in ROOTS or p.suffix != ".md" or p.name in SKIP:
+    parts = p.parts[1:] if p.parts[:1] == ("_archive",) else p.parts
+    if not parts or parts[0] not in ROOTS or p.suffix != ".md" or p.name in SKIP:
         raise ValueError(f"메모리 노트 경로 아님: {rel}")
     return inside(root, rel)
+
+
+def resolve_redirect(rel, redirects):
+    seen = set()
+    while rel in redirects:
+        if rel in seen:
+            raise ValueError(f'redirect cycle: {rel}')
+        seen.add(rel)
+        rel = redirects[rel]
+        if rel is None:
+            return None
+        if not isinstance(rel, str):
+            raise ValueError('invalid redirect target')
+    return rel
 
 
 def split_note(text):
@@ -106,7 +121,7 @@ class Note:
 
     @property
     def project(self):
-        parts = Path(self.rel).parts
+        parts = Path(self.rel.removeprefix("_archive/")).parts
         return parts[1] if parts[0] == "projects" and len(parts) > 2 else ""
 
     def summary(self):
@@ -131,6 +146,18 @@ def load_notes(root):
             text = note_path(root, rel).read_text(encoding="utf-8")
             _, meta, body = split_note(text)
             notes.append(Note(rel, text, meta, body, hooks.get(rel, "")))
+    return notes
+
+
+def load_archives(root):
+    notes = []
+    for path in sorted(inside(root, '_archive').rglob('*.md')):
+        rel = path.relative_to(root).as_posix()
+        if path.name in SKIP or len(Path(rel).parts) < 3 or Path(rel).parts[1] not in ROOTS:
+            continue
+        text = note_path(root, rel).read_text(encoding='utf-8')
+        _, meta, body = split_note(text)
+        notes.append(Note(rel, text, meta, body))
     return notes
 
 
@@ -175,6 +202,7 @@ def emit(text, max_bytes, whole_lines=False):
             prefix = prefix.rsplit("\n", 1)[0] + "\n" if "\n" in prefix else ""
         text = prefix + suffix.decode()
     sys.stdout.write(text)
+    return text
 
 
 def digest(data):

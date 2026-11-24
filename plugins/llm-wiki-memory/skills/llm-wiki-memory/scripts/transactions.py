@@ -79,7 +79,7 @@ def restore_batch(root, backup, apply=False):
     for entry in entries:
         rel = entry['path']
         if rel in seen or (rel not in ('MEMORY.md', '.memory-state.json') and rel.split('/')[0] not in
-                           ('user', 'feedback', 'project', 'reference', 'projects')):
+                           ('user', 'feedback', 'project', 'reference', 'projects', '_archive')):
             raise ValueError(f'잘못된 백업 경로: {rel}')
         seen.add(rel)
         path = inside(root, rel)

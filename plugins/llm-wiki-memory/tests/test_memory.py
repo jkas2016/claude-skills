@@ -19,7 +19,8 @@ class MemoryCLI(unittest.TestCase):
         self.vault = Path(self.tmp.name) / "vault"
         self.vault.mkdir()
         (self.vault / "MEMORY.md").write_text("# MEMORY\n", encoding="utf-8")
-        self.env = {**os.environ, "LLM_WIKI_PATH": str(self.vault)}
+        self.env = {**os.environ, "LLM_WIKI_PATH": str(self.vault),
+                    "XDG_STATE_HOME": str(Path(self.tmp.name) / "state")}
 
     def run_cli(self, script, *args, body="", ok=True):
         result = subprocess.run(

@@ -5,7 +5,7 @@
 1. `python3 scripts/recall.py PR 검증`으로 요약을 찾는다.
 2. 관련 결과를 `python3 scripts/recall.py --read feedback/pr_workflow.md`로 읽는다. 잘림 표시가 있으면 예산을 늘린다.
 3. 동일 주제를 다루는 정본이 있다면 그 노트에 조건을 추가한다. 이름만 비슷한 다른 규칙은 덮지 않는다.
-4. `save.py --type feedback --name pr_workflow --key pr-workflow --desc "PR 검증 규칙" --hook "PR 작성: 실행한 검증과 결과를 기록" --check`로 후보를 확인한다.
+4. `save.py --type feedback --name pr_workflow --key pr-workflow --desc "PR 검증 규칙" --hook "PR 작성: 실행한 검증과 결과를 기록" --check`로 정본 경로와 후보를 확인한다. 후보 원문은 `recall.py --read PATH`로 읽고, 같은 규칙을 담은 기존 노트가 여러 개면 통폐합한다.
 5. 검토한 전체 본문을 같은 명령의 stdin으로 주고 `--check`를 빼서 저장한다. `lint.py`로 검증한다.
 
 저장 결과가 `consolidation_due=True`이면 완료로 끝내지 않는다. `consolidate.py`로 전체 inventory를 받고 `consolidation.md`의 절차로 검토한다.

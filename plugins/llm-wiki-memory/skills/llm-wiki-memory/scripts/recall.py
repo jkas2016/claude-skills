@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Ranked summaries by default. Explicit original/index reads also have a byte budget."""
 import argparse
-from memory import budget, cli, emit, inside, load_notes, note_path, positive, select, vault
+from memory import budget, cli, emit, inside, load_notes, note_path, positive, resolve_redirect, select, vault
+from registry import state
+from usage import record, record_exposed
 
 
 def main():
@@ -17,7 +19,23 @@ def main():
     args = ap.parse_args()
     root = vault()
     if args.read:
-        text = f'=== {args.read} ===\n' + note_path(root, args.read).read_text(encoding='utf-8')
+        original = note_path(root, args.read)
+        rel = args.read if original.is_file() else resolve_redirect(args.read, state(root).get('redirects', {}))
+        if rel is None:
+            raise ValueError(f'DROPPED_NOTE: {args.read}')
+        path = note_path(root, rel)
+        if not path.is_file() and not rel.startswith('_archive/'):
+            archived = note_path(root, f'_archive/{rel}')
+            if archived.is_file():
+                path = archived
+                rel = f'_archive/{rel}'
+        text = f'=== {rel} ===\n'
+        if rel.startswith('_archive/'):
+            if '.full-' in path.stem:
+                text += 'Archived full text of a compressed note.\n'
+            else:
+                text += f'Restore with maintain.py --unarchive {rel} --apply\n'
+        text += path.read_text(encoding='utf-8')
     elif args.index:
         text = inside(root, 'MEMORY.md').read_text(encoding='utf-8')
     else:
@@ -26,7 +44,11 @@ def main():
         text += ''.join(n.summary() for n in hits[:args.limit])
         if len(hits) > args.limit:
             text += '[omitted: result limit; narrow search or raise --limit]\n'
-    emit(text, args.max_bytes, whole_lines=not args.read)
+    output = emit(text, args.max_bytes, whole_lines=not args.read)
+    if args.read:
+        record(root, 'read', rel, 'recall')
+    elif not args.index:
+        record_exposed(root, hits[:args.limit], output, 'recall')
 
 
 if __name__ == '__main__':
