@@ -1,0 +1,7 @@
+{
+  "name": "orca-worktree",
+  "version": "0.1.0",
+  "description": "Creates isolated Orca worktrees from a freshly fetched origin branch.",
+  "author": { "name": "jkas2016" },
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  printf 'Usage: wt-create <registered-repo-path> <new-branch> [remote-base-branch]\n' >&2
+  exit 2
+fi
+
+repo=$(git -C "$1" rev-parse --show-toplevel)
+branch=$2
+base=${3-master}
+git check-ref-format "refs/heads/$base"
+git check-ref-format --branch "$branch" >/dev/null
+orca_cli=${ORCA_CLI_COMMAND:-orca}
+command -v "$orca_cli" >/dev/null
+
+# Read this fetch's result directly. Linked worktrees share the object store.
+fetch_result=$(git -C "$repo" fetch --porcelain --refmap= --depth=1 \
+  --no-tags --no-recurse-submodules origin "refs/heads/$base")
+base_commit=$(awk '$4 == "FETCH_HEAD" {print $3}' <<< "$fetch_result")
+git -C "$repo" cat-file -e "${base_commit:?No commit returned by fetch}^{commit}"
+
+printf 'Base: origin/%s %s\n' "$base" "$base_commit" >&2
+"$orca_cli" worktree create --repo "path:$repo" --name "$branch" --branch "$branch" \
+  --base-branch "$base_commit" --no-parent --json
