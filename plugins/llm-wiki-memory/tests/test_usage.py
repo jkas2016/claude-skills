@@ -27,6 +27,25 @@ class Usage(unittest.TestCase):
         self.assertEqual((event['kind'], event['rel'], event['via']),
                          ('read', 'feedback/rule.md', 'recall'))
 
+    def test_lint_checks_the_usage_ranked_index_written_by_save(self):
+        self.note('feedback/a.md')
+        self.note('feedback/z.md')
+        self.run_cli('recall.py', '--read', 'feedback/z.md')
+        self.run_cli('save.py', '--project', 'serverb4', '--type', 'feedback',
+                     '--name', 'fixture', '--desc', 'local fixture baseline',
+                     '--hook', 'Check local fixture IDs', body='fixture baseline')
+
+        index = self.vault / 'MEMORY.md'
+        text = index.read_text()
+        self.assertLess(text.index('(feedback/z.md)'), text.index('(feedback/a.md)'))
+        self.run_cli('lint.py')
+        self.assertEqual(index.read_text(), text)
+
+        index.write_text(text.replace('(feedback/z.md) — git 규칙',
+                                      '(feedback/z.md) — outdated summary'))
+        result = self.run_cli('lint.py', ok=False)
+        self.assertIn('MEMORY.md: generated index is stale', result.stderr)
+
     def test_usage_failure_preserves_read(self):
         self.note()
         bad = Path(self.tmp.name) / 'bad-state'

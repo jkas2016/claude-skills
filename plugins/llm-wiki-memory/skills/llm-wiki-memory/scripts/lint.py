@@ -6,6 +6,7 @@ from urllib.parse import unquote
 from memory import FIELDS, cli, inside, load_notes, vault
 from maintain import validate_lifecycle
 from registry import MARKER, render_index
+from usage import summary as usage_summary
 
 
 def main():
@@ -38,7 +39,8 @@ def main():
         if linked.count(rel) > 1:
             problems.append(f'MEMORY.md: duplicate pointer -> {rel}')
     if MARKER in text:
-        if text != render_index(notes, text):
+        usage = usage_summary(root, dt.datetime.now(dt.timezone.utc)).notes
+        if text != render_index(notes, text, usage):
             problems.append('MEMORY.md: generated index is stale')
     else:
         for rel in sorted({n.rel for n in notes} - set(linked)):
